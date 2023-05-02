@@ -1,0 +1,15 @@
+---
+ - hosts: main_master
+   become: 'yes'
+   tasks:
+
+    - name: Deleting Previous Deployment to prod-shop
+      shell: kubectl --kubeconfig=/home/ubuntu/.kube/config delete -f prod-complete.yaml
+      ignore_errors: yes
+      args:
+        chdir: Sock-Shop-Microservices-Kubernetes-Project-US-Team-APPLICATION/deploy/kubernetes
+
+    - name: Deploying Latest Features to prod-shop
+      shell: kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f prod-complete.yaml 
+      args:
+        chdir: Sock-Shop-Microservices-Kubernetes-Project-US-Team-APPLICATION/deploy/kubernetes

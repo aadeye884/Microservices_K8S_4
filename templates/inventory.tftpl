@@ -1,0 +1,23 @@
+[all:vars]
+ansible_ssh_common_args='-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
+[main_master]
+%{ for index, dns in masters-dns ~}
+    %{ if index == 0 ~}
+        ${dns} ansible_host=${masters-ip[index]}
+    %{ endif ~}
+%{ endfor ~}
+[other_masters]
+%{ for index, dns in masters-dns ~}
+    %{ if index != 0 ~}
+        ${dns} ansible_host=${masters-ip[index]}
+    %{ endif ~}
+%{ endfor ~}
+[workers]
+%{ for index, dns in workers-dns ~}
+${dns} ansible_host=${workers-ip[index]}
+%{ endfor ~}
+[haproxy]
+%{ for index, dns in haproxy-dns ~}
+${dns} ansible_host=${haproxy-ip[index]}
+%{ endfor ~}
+

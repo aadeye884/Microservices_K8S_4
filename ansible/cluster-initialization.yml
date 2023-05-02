@@ -1,0 +1,155 @@
+### Main master node configurations
+- hosts: main_master
+  become: 'yes'
+  vars_files:
+    - ansible_vars_file.yml
+  tasks:
+    
+    - name: Kubectl Install
+      apt:
+        name: kubectl
+        state: present
+        force: 'yes'
+    
+    - name: Start the cluster
+      shell: kubeadm init --control-plane-endpoint "{{ haproxy_ip }}:6443" --pod-network-cidr=192.168.0.0/16 >> cluster.txt
+      register: result
+      args:
+        chdir: $HOME
+        creates: cluster.txt
+    
+    - name: Sleep for 20 seconds
+      wait_for:
+        timeout: 20
+
+    - name: Create .kube directory
+      become: 'yes'
+      become_user: ubuntu
+      file:
+        path: $HOME/.kube
+        state: directory
+        mode: 493
+    
+    - name: Check admin.conf file exists.
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_conf
+    
+    - name: Copy admin.conf to user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: 'yes'
+        owner: ubuntu
+      when: k8s_conf.stat.exists
+    
+    - name: Install Pod network
+      become_user: ubuntu
+      shell: kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml >> pod_setup.txt
+      args:
+        chdir: $HOME
+        creates: pod_setup.txt
+    
+    - name: Create a new certificate key
+      shell: kubeadm init phase upload-certs --upload-certs
+      register: join_certificate_key
+    
+    - name: Get join command
+      shell: kubeadm token create --print-join-command --certificate-key "{{ join_certificate_key.stdout_lines[2] }}"
+      register: join_command
+    
+    - debug:
+        var: join_command
+    
+    - name: Copy join command to local file
+      local_action: 'copy content="{{ join_command.stdout_lines[0] }}" dest="./join_command"'
+    
+    - name: Get worker node join command
+      shell: kubeadm token create --print-join-command
+      register: join_node_command
+    
+    - name: Copy worker node join command to local file
+      local_action: copy content="{{ join_node_command.stdout_lines[0] }}" dest="./join_node_command"
+
+    - name: ansible copy file from remote to local.
+      fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: /tmp/
+        flat: yes
+
+#### Configure other master nodes
+- hosts: other_masters
+  become: yes
+  tasks:
+   
+    - name: Copy the master join command to server location
+      copy: src=join_command dest=/tmp/join_command.sh mode=0777
+   
+    - name: Join the master node to cluster
+      command: sh /tmp/join_command.sh
+   
+    - name: Sleep for 20 seconds
+      wait_for:
+       timeout: 20
+
+    - name: Create .kube directory
+      become: yes
+      become_user: ubuntu
+      file:
+        path: $HOME/.kube
+        state: directory
+        mode: 0755
+   
+    - name: Check admin.conf file exists.
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_conf
+   
+    - name: Copy admin.conf to user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+      when: k8s_conf.stat.exists
+
+##### Worker Node Configurations
+- hosts: workers
+  become: yes
+  tasks:
+
+    - name: Copy the worker join command to server location
+      copy: src=join_node_command dest=/tmp/join_node_command.sh mode=0777
+
+    - name: Join the worker node to cluster
+      command: sh /tmp/join_node_command.sh
+
+
+##### Load balancer Configuration
+- hosts: haproxy
+  become: yes
+  tasks:
+
+    - name: Copy the master join command to server location
+      copy: src=/tmp/admin.conf dest=/tmp/admin.conf mode=0644
+
+    - name: Create .kube directory
+      become: yes
+      become_user: ubuntu
+      file:
+        path: $HOME/.kube
+        state: directory
+        mode: 493
+   
+    - name: Check admin.conf file exists.
+      stat:
+        path: /tmp/admin.conf
+      register: k8s_conf
+   
+    - name: Copy admin.conf to user's kube config
+      copy:
+        src: /tmp/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+      when: k8s_conf.stat.exists
