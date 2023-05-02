@@ -1,1 +1,0 @@
-# 03-APR-Sock-Shop-Microservices-Kubernetes-Project-US-Team
